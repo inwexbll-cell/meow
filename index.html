@@ -211,7 +211,7 @@
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
-                    <button onclick="saveAllAdminData()" class="bg-gradient-to-r from-pastel-pink to-pastel-softPink hover:from-pastel-softPink hover:to-white text-pastel-darkPink border border-pastel-milkPink active:scale-95 text-xs sm:text-sm px-4 py-2 rounded-xl shadow-sm hover:shadow transition-all flex items-center gap-1.5 font-semibold">
+                    <button id="btnSaveAll" onclick="saveAllAdminData()" class="bg-gradient-to-r from-pastel-pink to-pastel-softPink hover:from-pastel-softPink hover:to-white text-pastel-darkPink border border-pastel-milkPink active:scale-95 text-xs sm:text-sm px-4 py-2 rounded-xl shadow-sm hover:shadow transition-all flex items-center gap-1.5 font-semibold">
                         <i class="fa-solid fa-floppy-disk text-pastel-deepPink"></i> บันทึกข้อมูล
                     </button>
                 </div>
@@ -380,7 +380,7 @@
                             class="w-full bg-pastel-lightPink/60 border border-pastel-pink rounded-xl pl-10 pr-4 py-3 text-xs sm:text-sm text-pastel-textDark focus:outline-none focus:ring-2 focus:ring-pastel-deepPink focus:bg-white transition-all">
                     </div>
                 </div>
-                <button type="submit" 
+                <button type="submit" id="btnLoginSubmit"
                     class="w-full bg-gradient-to-r from-pastel-pink to-pastel-btnBg hover:from-pastel-btnBg hover:to-pastel-btnHover text-pastel-darkPink font-semibold py-3 rounded-xl text-xs sm:text-sm shadow-sm hover:shadow transition-all border border-pastel-milkPink mt-2 active:scale-95">
                     [ เข้าสู่ระบบ ]
                 </button>
@@ -436,7 +436,7 @@
                         <i class="fa-solid fa-circle-check text-xs text-pastel-deepPink"></i> ยืนยันว่ารีวิวนี้คือรีวิวจริง 100%
                     </label>
                 </div>
-                <button type="submit" 
+                <button type="submit" id="btnReviewSubmit"
                     class="w-full bg-gradient-to-r from-pastel-pink to-pastel-btnBg hover:from-pastel-btnBg hover:to-pastel-btnHover text-pastel-darkPink font-semibold py-3 rounded-xl text-xs sm:text-sm shadow-sm hover:shadow transition-all border border-pastel-milkPink mt-2 active:scale-95">
                     [ ส่งรีวิว ]
                 </button>
@@ -500,7 +500,6 @@
         // Supabase Configuration
         const SUPABASE_URL = 'https://kbegxaasskojzfxggrbo.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtiZWd4YWFzc2tvanpmeGdncmJvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg3Njc0NzksImV4cCI6MjEwNDM0MzQ3OX0.EO1KX7KYrpsNflWgYLU2HoYb_QnKKlXzxt0IZdClhqA';
-        const ADMIN_USER_ID = '422e9e72-ae99-47ca-8bc2-84e3e2bc28f3';
 
         // Initialize Supabase Client
         const { createClient } = supabase;
@@ -601,7 +600,7 @@
             }
         }
 
-        // Admin Gear Button Click
+        // Admin Gear Button Click & Security Check (RPC is_admin & session validation)
         async function handleAdminGearClick() {
             if (isAdminLoggedIn) {
                 await handleAdminLogout();
@@ -612,35 +611,54 @@
 
         async function handleAdminLoginSubmit(e) {
             e.preventDefault();
+            const btn = document.getElementById('btnLoginSubmit');
+            btn.disabled = true;
             const email = document.getElementById('adminEmailInput').value.trim();
             const password = document.getElementById('adminPasswordInput').value.trim();
 
             try {
-                const { data, error } = await supabaseClient.auth.signInWithPassword({
+                // 1. Sign in via Supabase Auth
+                const { data: authData, error: authError } = await supabaseClient.auth.signInWithPassword({
                     email: email,
                     password: password
                 });
 
-                if (error) throw error;
+                if (authError) throw authError;
 
-                if (data.user && data.user.id === ADMIN_USER_ID) {
-                    isAdminLoggedIn = true;
-                    closeModal('adminLoginModal');
-                    document.getElementById('adminLoginForm').reset();
-                    showToast('เข้าสู่ระบบแอดมินสำเร็จ!');
-                    toggleSection('admin');
+                if (authData.user) {
+                    // 2. Security check: call Postgres function public.is_admin() to verify table membership
+                    const { data: adminCheck, error: adminError } = await supabaseClient.rpc('is_admin');
+
+                    if (adminError) throw adminError;
+
+                    if (adminCheck === true) {
+                        isAdminLoggedIn = true;
+                        closeModal('adminLoginModal');
+                        document.getElementById('adminLoginForm').reset();
+                        showToast('เข้าสู่ระบบแอดมินสำเร็จ!');
+                        toggleSection('admin');
+                    } else {
+                        // Not an admin in public.admins table
+                        await supabaseClient.auth.signOut();
+                        showToast('บัญชีนี้ไม่มีสิทธิ์แอดมิน');
+                    }
                 } else {
-                    await supabaseClient.auth.signOut();
-                    showToast('บัญชีนี้ไม่มีสิทธิ์แอดมิน');
+                    showToast('เข้าสู่ระบบไม่สำเร็จ');
                 }
             } catch (err) {
-                console.error(err);
-                showToast('เข้าสู่ระบบไม่สำเร็จ: ' + (err.message || 'กรุณาตรวจสอบอีเมลหรือรหัสผ่าน'));
+                console.error('Admin login error:', err);
+                showToast('เข้าสู่ระบบไม่สำเร็จ: ' + (err.message || 'โปรดตรวจสอบอีเมลและรหัสผ่าน'));
+            } finally {
+                btn.disabled = false;
             }
         }
 
         async function handleAdminLogout() {
-            await supabaseClient.auth.signOut();
+            try {
+                await supabaseClient.auth.signOut();
+            } catch (err) {
+                console.error(err);
+            }
             isAdminLoggedIn = false;
             showToast('ออกจากระบบแอดมินแล้ว');
             toggleSection('customer');
@@ -666,14 +684,17 @@
             }
         }
 
-        // Fetch all data from Supabase
+        // Fetch all data from Supabase with loading / empty / error handling
         async function loadDataFromSupabase() {
             try {
-                const { data: storeRes } = await supabaseClient
+                // Fetch Store Info
+                const { data: storeRes, error: storeErr } = await supabaseClient
                     .from('stores')
                     .select('*')
                     .limit(1)
-                    .single();
+                    .maybeSingle();
+
+                if (storeErr) throw storeErr;
 
                 if (storeRes) {
                     storeData = {
@@ -689,24 +710,30 @@
                     };
                 }
 
-                const { data: highlightsRes } = await supabaseClient
+                // Fetch Highlights with story_images
+                const { data: highlightsRes, error: highlightsErr } = await supabaseClient
                     .from('highlights')
                     .select('*, story_images(id, image_url, display_order)')
                     .order('display_order', { ascending: true });
+
+                if (highlightsErr) throw highlightsErr;
 
                 if (highlightsRes) {
                     highlightsList = highlightsRes.map(hl => ({
                         id: hl.id,
                         title: hl.title,
                         cover: hl.cover || '',
-                        images: (hl.story_images || []).map(img => img.image_url)
+                        images: (hl.story_images || []).sort((a, b) => a.display_order - b.display_order).map(img => img.image_url)
                     }));
                 }
 
-                const { data: reviewsRes } = await supabaseClient
+                // Fetch Reviews
+                const { data: reviewsRes, error: reviewsErr } = await supabaseClient
                     .from('reviews')
                     .select('*')
                     .order('created_at', { ascending: false });
+
+                if (reviewsErr) throw reviewsErr;
 
                 if (reviewsRes) {
                     reviewsList = reviewsRes.map(rev => {
@@ -730,13 +757,23 @@
                 refreshStorefront();
             } catch (err) {
                 console.error('Error loading data from Supabase:', err);
+                showToast('เกิดข้อผิดพลาดในการโหลดข้อมูล');
+                document.getElementById('latestComment').textContent = '"ไม่สามารถโหลดข้อมูลจากฐานข้อมูลได้ กรุณาลองใหม่อีกครั้ง"';
             }
         }
 
+        // On DOM Content Loaded, verify active session & is_admin status
         window.addEventListener('DOMContentLoaded', async () => {
-            const { data: { session } } = await supabaseClient.auth.getSession();
-            if (session && session.user && session.user.id === ADMIN_USER_ID) {
-                isAdminLoggedIn = true;
+            try {
+                const { data: { session } } = await supabaseClient.auth.getSession();
+                if (session && session.user) {
+                    const { data: adminCheck } = await supabaseClient.rpc('is_admin');
+                    if (adminCheck === true) {
+                        isAdminLoggedIn = true;
+                    }
+                }
+            } catch (err) {
+                console.error('Session check error:', err);
             }
             await loadDataFromSupabase();
         });
@@ -797,7 +834,7 @@
         function renderHighlightsCustomer() {
             const listEl = document.getElementById('displayHighlightsList');
             if (!highlightsList || highlightsList.length === 0) {
-                listEl.innerHTML = '<p class="text-xs text-pastel-textMuted py-2">ยังไม่มีไฮไลท์</p>';
+                listEl.innerHTML = '<p class="text-xs text-pastel-textMuted py-2">ไม่มีข้อมูลไฮไลท์</p>';
                 return;
             }
 
@@ -826,7 +863,7 @@
             if (!reviewsList || reviewsList.length === 0) {
                 starsContainer.innerHTML = '<i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i>';
                 dateEl.textContent = '-';
-                commentEl.textContent = '"ยังไม่มีรีวิวในขณะนี้ ร่วมเขียนรีวิวความประทับใจแรกได้เลยค่ะ 💖"';
+                commentEl.textContent = '"ยังไม่มีรีวิวในระบบ ร่วมเขียนรีวิวความประทับใจได้เลยค่ะ 💖"';
                 usernameEl.textContent = '@natthakrita_tukta';
                 return;
             }
@@ -909,8 +946,13 @@
             }
         }
 
+        // Handle Review Submission with double-click / multiple submission prevention
         async function handleReviewSubmit(e) {
             e.preventDefault();
+            const btn = document.getElementById('btnReviewSubmit');
+            if (btn.disabled) return;
+            btn.disabled = true;
+
             const username = document.getElementById('inputUsername').value.trim();
             const ratingInput = document.querySelector('input[name="rating"]:checked');
             const comment = document.getElementById('inputComment').value.trim();
@@ -918,6 +960,7 @@
 
             if (!ratingInput) {
                 showToast('กรุณาให้คะแนนดาว');
+                btn.disabled = false;
                 return;
             }
 
@@ -942,8 +985,10 @@
                 showToast('ส่งรีวิวสำเร็จ ขอบคุณมากค่ะ! 💖');
                 await loadDataFromSupabase();
             } catch (err) {
-                console.error(err);
+                console.error('Error submitting review:', err);
                 showToast('เกิดข้อผิดพลาดในการส่งรีวิว');
+            } finally {
+                btn.disabled = false;
             }
         }
 
@@ -969,17 +1014,29 @@
                     <div class="bg-pastel-lightPink/40 border border-pastel-pink rounded-2xl p-4 text-left shadow-2xs">
                         <div class="flex items-center justify-between mb-2">
                             <div class="flex items-center gap-1.5 flex-wrap">
-                                <span class="text-xs font-semibold text-pastel-darkPink">${rev.username}</span>
+                                <span class="text-xs font-semibold text-pastel-darkPink">${escapeHtml(rev.username)}</span>
                                 ${rev.verified ? '<span class="inline-flex items-center gap-0.5 bg-white text-pastel-darkPink border border-pastel-pink text-[9px] px-2 py-0.5 rounded-full"><i class="fa-solid fa-circle-check text-pastel-deepPink"></i> รีวิวจริง 100%</span>' : ''}
                             </div>
                             <span class="text-[10px] text-pastel-textMuted">${rev.date}</span>
                         </div>
                         <div class="flex gap-1 text-xs mb-2">${stars}</div>
-                        <p class="text-xs text-pastel-textDark leading-relaxed">"${rev.comment}"</p>
+                        <p class="text-xs text-pastel-textDark leading-relaxed">"${escapeHtml(rev.comment)}"</p>
                     </div>
                 `;
             });
             container.innerHTML = html;
+        }
+
+        // Simple helper for safe HTML text rendering
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, function(m) { return map[m]; });
         }
 
         function switchAdminTab(tabName) {
@@ -1049,7 +1106,7 @@
         async function uploadFileToSupabaseStorage(file, bucket = 'store-images') {
             const fileExt = file.name.split('.').pop();
             const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
-            const { error } = await supabaseClient.storage.from(bucket).upload(filePath = fileName, file);
+            const { error } = await supabaseClient.storage.from(bucket).upload(fileName, file);
             if (error) throw error;
             const { data } = supabaseClient.storage.from(bucket).getPublicUrl(fileName);
             return data.publicUrl;
@@ -1068,7 +1125,7 @@
                 showToast('อัปโหลดภาพปกสำเร็จ');
             } catch (err) {
                 console.error(err);
-                showToast('อัปโหลดไม่สำเร็จ');
+                showToast('อัปโหลดภาพปกไม่สำเร็จ');
             }
         }
 
@@ -1093,7 +1150,7 @@
                 showToast('อัปโหลดรูปโปรไฟล์สำเร็จ');
             } catch (err) {
                 console.error(err);
-                showToast('อัปโหลดไม่สำเร็จ');
+                showToast('อัปโหลดรูปโปรไฟล์ไม่สำเร็จ');
             }
         }
 
@@ -1117,7 +1174,7 @@
                 html += `
                     <div class="bg-pastel-lightPink/30 border border-pastel-pink rounded-2xl p-4 space-y-3">
                         <div class="flex items-center justify-between gap-2">
-                            <input type="text" value="${hl.title}" oninput="highlightsList[${hlIdx}].title = this.value" placeholder="ชื่อไฮไลท์" 
+                            <input type="text" value="${escapeHtml(hl.title)}" oninput="highlightsList[${hlIdx}].title = this.value" placeholder="ชื่อไฮไลท์" 
                                 class="flex-1 bg-white border border-pastel-pink rounded-xl px-3 py-2 text-xs font-semibold text-pastel-textDark focus:outline-none focus:ring-2 focus:ring-pastel-deepPink">
                             <button type="button" onclick="deleteHighlight(${hlIdx})" class="w-8 h-8 rounded-xl bg-rose-50 text-rose-500 border border-rose-200 hover:bg-rose-100 flex items-center justify-center shrink-0">
                                 <i class="fa-regular fa-trash-can text-xs"></i>
@@ -1227,11 +1284,11 @@
                     <div class="bg-pastel-lightPink/40 border border-pastel-pink rounded-2xl p-3.5 flex items-start justify-between gap-3">
                         <div class="space-y-1">
                             <div class="flex items-center gap-2">
-                                <span class="text-xs font-semibold text-pastel-darkPink">${rev.username}</span>
+                                <span class="text-xs font-semibold text-pastel-darkPink">${escapeHtml(rev.username)}</span>
                                 <span class="text-[10px] text-amber-500 font-bold">${rev.rating} ดาว</span>
                                 <span class="text-[10px] text-pastel-textMuted">${rev.date}</span>
                             </div>
-                            <p class="text-xs text-pastel-textDark">"${rev.comment}"</p>
+                            <p class="text-xs text-pastel-textDark">"${escapeHtml(rev.comment)}"</p>
                         </div>
                         <button type="button" onclick="deleteReview('${rev.id}')" class="w-8 h-8 rounded-xl bg-rose-50 text-rose-500 border border-rose-200 hover:bg-rose-100 flex items-center justify-center shrink-0">
                             <i class="fa-regular fa-trash-can text-xs"></i>
@@ -1255,7 +1312,12 @@
             }
         }
 
+        // Save All Admin Data with button double-click / multiple submission prevention
         async function saveAllAdminData() {
+            const btn = document.getElementById('btnSaveAll');
+            if (btn.disabled) return;
+            btn.disabled = true;
+
             try {
                 showToast('กำลังบันทึกข้อมูลทั้งหมด...');
 
@@ -1268,7 +1330,7 @@
 
                 // 1. Save Store Info
                 if (storeData.id) {
-                    await supabaseClient.from('stores').update({
+                    const { error: storeUpdateErr } = await supabaseClient.from('stores').update({
                         shop_name: storeData.shopName,
                         ig_handle: storeData.igHandle,
                         shop_desc: storeData.shopDesc,
@@ -1278,8 +1340,9 @@
                         cover_text: storeData.coverText,
                         profile_img: storeData.profileImg
                     }).eq('id', storeData.id);
+                    if (storeUpdateErr) throw storeUpdateErr;
                 } else {
-                    const { data } = await supabaseClient.from('stores').insert([{
+                    const { data: storeInsData, error: storeInsErr } = await supabaseClient.from('stores').insert([{
                         shop_name: storeData.shopName,
                         ig_handle: storeData.igHandle,
                         shop_desc: storeData.shopDesc,
@@ -1289,7 +1352,8 @@
                         cover_text: storeData.coverText,
                         profile_img: storeData.profileImg
                     }]).select().single();
-                    if (data) storeData.id = data.id;
+                    if (storeInsErr) throw storeInsErr;
+                    if (storeInsData) storeData.id = storeInsData.id;
                 }
 
                 // 2. Save Highlights & Stories
@@ -1298,39 +1362,46 @@
                     let hlId = hl.id;
 
                     if (hlId) {
-                        await supabaseClient.from('highlights').update({
+                        const { error: hlUpdErr } = await supabaseClient.from('highlights').update({
                             title: hl.title,
                             cover: hl.cover,
                             display_order: i
                         }).eq('id', hlId);
+                        if (hlUpdErr) throw hlUpdErr;
                     } else {
-                        const { data } = await supabaseClient.from('highlights').insert([{
+                        const { data: hlInsData, error: hlInsErr } = await supabaseClient.from('highlights').insert([{
                             title: hl.title,
                             cover: hl.cover,
                             display_order: i
                         }]).select().single();
-                        if (data) hlId = data.id;
+                        if (hlInsErr) throw hlInsErr;
+                        if (hlInsData) hlId = hlInsData.id;
                     }
 
                     // Refresh story images
                     if (hlId) {
-                        await supabaseClient.from('story_images').delete().eq('highlight_id', hlId);
+                        const { error: delImgErr } = await supabaseClient.from('story_images').delete().eq('highlight_id', hlId);
+                        if (delImgErr) throw delImgErr;
+
                         for (let j = 0; j < hl.images.length; j++) {
-                            await supabaseClient.from('story_images').insert([{
+                            const { error: insImgErr } = await supabaseClient.from('story_images').insert([{
                                 highlight_id: hlId,
                                 image_url: hl.images[j],
                                 display_order: j
                             }]);
+                            if (insImgErr) throw insImgErr;
                         }
                     }
                 }
 
                 showToast('บันทึกข้อมูลทั้งหมดสำเร็จ!');
                 await loadDataFromSupabase();
-                toggleSection('customer');
+                // คงอยู่ในหน้าแอดมิน (ไม่ต้องเรียก toggleSection('customer'))
             } catch (err) {
-                console.error(err);
-                showToast('บันทึกข้อมูลไม่สำเร็จ: ' + (err.message || 'โปรดตรวจสอบการเชื่อมต่อ'));
+                console.error('Error saving admin data:', err);
+                showToast('บันทึกข้อมูลไม่สำเร็จ: ' + (err.message || 'โปรดตรวจสอบสิทธิ์แอดมินหรือการเชื่อมต่อ'));
+            } finally {
+                btn.disabled = false;
             }
         }
     </script>
