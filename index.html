@@ -623,10 +623,7 @@
                     password: password
                 });
 
-                if (authError) {
-                    showToast('อีเมลหรือรหัสผ่านไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง');
-                    return;
-                }
+                if (authError) throw authError;
 
                 if (authData.user) {
                     // 2. Security check: call Postgres function public.is_admin() to verify table membership
@@ -650,7 +647,7 @@
                 }
             } catch (err) {
                 console.error('Admin login error:', err);
-                showToast('เกิดข้อผิดพลาดในการเข้าสู่ระบบ กรุณาลองใหม่อีกครั้ง');
+                showToast('เข้าสู่ระบบไม่สำเร็จ: โปรดตรวจสอบอีเมลและรหัสผ่าน');
             } finally {
                 btn.disabled = false;
             }
@@ -760,7 +757,7 @@
                 refreshStorefront();
             } catch (err) {
                 console.error('Error loading data from Supabase:', err);
-                showToast('เกิดข้อผิดพลาดในการโหลดข้อมูล');
+                showToast('ไม่สามารถโหลดข้อมูลจากฐานข้อมูลได้ กรุณาลองใหม่อีกครั้ง');
                 document.getElementById('latestComment').textContent = '"ไม่สามารถโหลดข้อมูลจากฐานข้อมูลได้ กรุณาลองใหม่อีกครั้ง"';
             }
         }
@@ -991,7 +988,7 @@
                 await loadDataFromSupabase();
             } catch (err) {
                 console.error('Error submitting review:', err);
-                showToast('เกิดข้อผิดพลาดในการส่งรีวิว กรุณาลองใหม่อีกครั้ง');
+                showToast('เกิดข้อผิดพลาดในการส่งรีวิว');
             } finally {
                 btn.disabled = false;
             }
@@ -1409,7 +1406,7 @@
                 await loadDataFromSupabase();
             } catch (err) {
                 console.error('Error saving admin data:', err);
-                showToast('บันทึกข้อมูลไม่สำเร็จ กรุณาตรวจสอบสิทธิ์แอดมินหรือการเชื่อมต่อ');
+                showToast('บันทึกข้อมูลไม่สำเร็จ: โปรดตรวจสอบสิทธิ์แอดมินหรือการเชื่อมต่อ');
             } finally {
                 btn.disabled = false;
             }
