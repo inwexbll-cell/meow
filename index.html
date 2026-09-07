@@ -623,7 +623,10 @@
                     password: password
                 });
 
-                if (authError) throw authError;
+                if (authError) {
+                    showToast('อีเมลหรือรหัสผ่านไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง');
+                    return;
+                }
 
                 if (authData.user) {
                     // 2. Security check: call Postgres function public.is_admin() to verify table membership
@@ -647,7 +650,7 @@
                 }
             } catch (err) {
                 console.error('Admin login error:', err);
-                showToast('เข้าสู่ระบบไม่สำเร็จ: ' + (err.message || 'โปรดตรวจสอบอีเมลและรหัสผ่าน'));
+                showToast('เกิดข้อผิดพลาดในการเข้าสู่ระบบ กรุณาลองใหม่อีกครั้ง');
             } finally {
                 btn.disabled = false;
             }
@@ -840,14 +843,16 @@
 
             let html = '';
             highlightsList.forEach((hl, idx) => {
+                const safeCover = escapeHtml(hl.cover || (hl.images && hl.images[0]) || 'https://placehold.co/150x150/FFD6E8/A25974?text=Highlight');
+                const safeTitle = escapeHtml(hl.title);
                 html += `
                     <div onclick="openStoryViewer(${idx})" class="flex flex-col items-center gap-1.5 cursor-pointer group shrink-0">
                         <div class="w-16 h-16 sm:w-18 sm:h-18 rounded-full p-0.5 bg-gradient-to-tr from-pastel-deepPink via-pastel-pink to-pastel-accent group-hover:scale-105 transition-transform shadow-sm">
                             <div class="w-full h-full rounded-full bg-white p-0.5 overflow-hidden flex items-center justify-center">
-                                <img src="${hl.cover || (hl.images && hl.images[0]) || 'https://placehold.co/150x150/FFD6E8/A25974?text=Highlight'}" class="w-full h-full object-cover rounded-full" alt="${hl.title}">
+                                <img src="${safeCover}" class="w-full h-full object-cover rounded-full" alt="${safeTitle}">
                             </div>
                         </div>
-                        <span class="text-[11px] font-medium text-pastel-textDark max-w-[70px] truncate">${hl.title}</span>
+                        <span class="text-[11px] font-medium text-pastel-textDark max-w-[70px] truncate">${safeTitle}</span>
                     </div>
                 `;
             });
@@ -903,7 +908,7 @@
 
             if (!hl.images || hl.images.length === 0) return;
 
-            imgEl.src = hl.images[currentSlideIndex];
+            imgEl.src = escapeHtml(hl.images[currentSlideIndex]);
 
             let barsHtml = '';
             hl.images.forEach((_, idx) => {
@@ -986,7 +991,7 @@
                 await loadDataFromSupabase();
             } catch (err) {
                 console.error('Error submitting review:', err);
-                showToast('เกิดข้อผิดพลาดในการส่งรีวิว');
+                showToast('เกิดข้อผิดพลาดในการส่งรีวิว กรุณาลองใหม่อีกครั้ง');
             } finally {
                 btn.disabled = false;
             }
@@ -1017,7 +1022,7 @@
                                 <span class="text-xs font-semibold text-pastel-darkPink">${escapeHtml(rev.username)}</span>
                                 ${rev.verified ? '<span class="inline-flex items-center gap-0.5 bg-white text-pastel-darkPink border border-pastel-pink text-[9px] px-2 py-0.5 rounded-full"><i class="fa-solid fa-circle-check text-pastel-deepPink"></i> รีวิวจริง 100%</span>' : ''}
                             </div>
-                            <span class="text-[10px] text-pastel-textMuted">${rev.date}</span>
+                            <span class="text-[10px] text-pastel-textMuted">${escapeHtml(rev.date)}</span>
                         </div>
                         <div class="flex gap-1 text-xs mb-2">${stars}</div>
                         <p class="text-xs text-pastel-textDark leading-relaxed">"${escapeHtml(rev.comment)}"</p>
@@ -1029,6 +1034,7 @@
 
         // Simple helper for safe HTML text rendering
         function escapeHtml(text) {
+            if (!text) return '';
             const map = {
                 '&': '&amp;',
                 '<': '&lt;',
@@ -1036,7 +1042,7 @@
                 '"': '&quot;',
                 "'": '&#039;'
             };
-            return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+            return String(text).replace(/[&<>"']/g, function(m) { return map[m]; });
         }
 
         function switchAdminTab(tabName) {
@@ -1171,10 +1177,12 @@
 
             let html = '';
             highlightsList.forEach((hl, hlIdx) => {
+                const safeTitle = escapeHtml(hl.title);
+                const safeCover = hl.cover ? escapeHtml(hl.cover) : '';
                 html += `
                     <div class="bg-pastel-lightPink/30 border border-pastel-pink rounded-2xl p-4 space-y-3">
                         <div class="flex items-center justify-between gap-2">
-                            <input type="text" value="${escapeHtml(hl.title)}" oninput="highlightsList[${hlIdx}].title = this.value" placeholder="ชื่อไฮไลท์" 
+                            <input type="text" value="${safeTitle}" oninput="highlightsList[${hlIdx}].title = this.value" placeholder="ชื่อไฮไลท์" 
                                 class="flex-1 bg-white border border-pastel-pink rounded-xl px-3 py-2 text-xs font-semibold text-pastel-textDark focus:outline-none focus:ring-2 focus:ring-pastel-deepPink">
                             <button type="button" onclick="deleteHighlight(${hlIdx})" class="w-8 h-8 rounded-xl bg-rose-50 text-rose-500 border border-rose-200 hover:bg-rose-100 flex items-center justify-center shrink-0">
                                 <i class="fa-regular fa-trash-can text-xs"></i>
@@ -1187,7 +1195,7 @@
                                     <i class="fa-solid fa-cloud-arrow-up"></i> เลือกไฟล์ภาพปก
                                     <input type="file" accept="image/*" class="hidden" onchange="handleHighlightCoverUpload(${hlIdx}, event)">
                                 </label>
-                                ${hl.cover ? `<img src="${hl.cover}" class="w-10 h-10 object-cover rounded-xl border border-pastel-pink">` : ''}
+                                ${safeCover ? `<img src="${safeCover}" class="w-10 h-10 object-cover rounded-xl border border-pastel-pink">` : ''}
                             </div>
                         </div>
                         <div class="space-y-1 pt-1 border-t border-pastel-pink/50">
@@ -1195,7 +1203,7 @@
                             <div class="flex flex-wrap gap-2 mb-2" id="adminStoryImgs_${hlIdx}">
                                 ${hl.images.map((imgUrl, imgIdx) => `
                                     <div class="relative w-14 h-14 rounded-xl overflow-hidden border border-pastel-pink group">
-                                        <img src="${imgUrl}" class="w-full h-full object-cover">
+                                        <img src="${escapeHtml(imgUrl)}" class="w-full h-full object-cover">
                                         <button type="button" onclick="deleteStoryImage(${hlIdx}, ${imgIdx})" class="absolute inset-0 bg-black/40 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
                                             <i class="fa-solid fa-xmark text-xs"></i>
                                         </button>
@@ -1280,17 +1288,20 @@
 
             let html = '';
             reviewsList.forEach((rev) => {
+                const safeUsername = escapeHtml(rev.username);
+                const safeComment = escapeHtml(rev.comment);
+                const safeDate = escapeHtml(rev.date);
                 html += `
                     <div class="bg-pastel-lightPink/40 border border-pastel-pink rounded-2xl p-3.5 flex items-start justify-between gap-3">
                         <div class="space-y-1">
                             <div class="flex items-center gap-2">
-                                <span class="text-xs font-semibold text-pastel-darkPink">${escapeHtml(rev.username)}</span>
-                                <span class="text-[10px] text-amber-500 font-bold">${rev.rating} ดาว</span>
-                                <span class="text-[10px] text-pastel-textMuted">${rev.date}</span>
+                                <span class="text-xs font-semibold text-pastel-darkPink">${safeUsername}</span>
+                                <span class="text-[10px] text-amber-500 font-bold">${escapeHtml(String(rev.rating))} ดาว</span>
+                                <span class="text-[10px] text-pastel-textMuted">${safeDate}</span>
                             </div>
-                            <p class="text-xs text-pastel-textDark">"${escapeHtml(rev.comment)}"</p>
+                            <p class="text-xs text-pastel-textDark">"${safeComment}"</p>
                         </div>
-                        <button type="button" onclick="deleteReview('${rev.id}')" class="w-8 h-8 rounded-xl bg-rose-50 text-rose-500 border border-rose-200 hover:bg-rose-100 flex items-center justify-center shrink-0">
+                        <button type="button" onclick="deleteReview('${escapeHtml(rev.id)}')" class="w-8 h-8 rounded-xl bg-rose-50 text-rose-500 border border-rose-200 hover:bg-rose-100 flex items-center justify-center shrink-0">
                             <i class="fa-regular fa-trash-can text-xs"></i>
                         </button>
                     </div>
@@ -1396,10 +1407,9 @@
 
                 showToast('บันทึกข้อมูลทั้งหมดสำเร็จ!');
                 await loadDataFromSupabase();
-                // คงอยู่ในหน้าแอดมิน (ไม่ต้องเรียก toggleSection('customer'))
             } catch (err) {
                 console.error('Error saving admin data:', err);
-                showToast('บันทึกข้อมูลไม่สำเร็จ: ' + (err.message || 'โปรดตรวจสอบสิทธิ์แอดมินหรือการเชื่อมต่อ'));
+                showToast('บันทึกข้อมูลไม่สำเร็จ กรุณาตรวจสอบสิทธิ์แอดมินหรือการเชื่อมต่อ');
             } finally {
                 btn.disabled = false;
             }
